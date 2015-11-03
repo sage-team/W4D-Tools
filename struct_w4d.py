@@ -41,6 +41,10 @@ class HierarchyPivot(Struct):
     isBone = 1 #default 1
     position = Vector((0.0, 0.0 ,0.0))
     rotation = Quaternion((1.0, 0.0, 0.0, 0.0))
+	
+#chunk 259 (references a hierarchy file)
+class HierarchyFile(Struct):
+    name = ""
 
 # chunk 256
 class Hierarchy(Struct):
@@ -75,6 +79,15 @@ class Animation(Struct):
     channels = [] 
 	
 #######################################################################################
+# Model
+#######################################################################################
+
+#chunk 0
+class Model(Struct):
+    name = ""
+    hieraName = name # is the name of the model by default
+	
+#######################################################################################
 # Box
 #######################################################################################	
 
@@ -84,60 +97,59 @@ class Box(Struct):
     extend = Vector((0.0, 0.0 ,0.0))
 	
 #######################################################################################
+# VertexInfluences
+#######################################################################################
+
+#chunk 7
+class MeshVertexInfluences(Struct):
+    boneIdx = 0
+    boneInf = 0.0
+	
+#######################################################################################
+#  Texture Animation
+#######################################################################################		
+
+#chunk 32
+#class TextureAnimation(Struct):
+    #not sure what values we need here
+	
+#######################################################################################
 # Texture
 #######################################################################################	
 	
-class MaterialTexture(Struct):
+#chunk 31
+class Texture(Struct):
     name = ""
-    attribute = 0 #0 standard, 1 normal
-    txCoords = []	
+    type = 0 #0 standard, 1 normal, 2 displacement
+    value = 0.0 # factor for normal, displacement etc
+    animations = []
 	
 #######################################################################################
 # Material
 #######################################################################################	
 
-#chunk 6
+#chunk 30
 class MeshMaterial(Struct):
     diffuse = RGBA()
-    diffuseIntensity = 0.0
+    diffuse_intensity = 0.0
     specular = RGBA()
-    specularIntensity = 0.0
+    specular_intensity = 0.0
     emit = 0.0
-    ambient = 0.0          
-    translucency = 0.0  
+    alpha = 1.0
     textures = []
-
-#######################################################################################
-# Vertices
-#######################################################################################
-
-#chunk 4
-class MeshVertexInfluences(Struct):
-    boneIdx = 0
-    bone2Idx = 0
-    boneInf = 0.0
-    bone2Inf = 0.0
-	
-#######################################################################################
-# Faces
-#######################################################################################	
-
-#chunk 5
-class MeshFace(Struct):
-    vertIds = []
 	
 #######################################################################################
 # Mesh
 #######################################################################################	
 
-#chunk 1
+#chunk 2
 class MeshHeader(Struct):
-    attrs = 0
+    type = 0
     # 0   -> normal mesh
 	# 1   -> normal mesh - two sided
     # 2   -> normal mesh - camera oriented
-    # 512 -> skin
-	# 513 -> skin - two sided
+    # 128 -> skin
+	# 129 -> skin - two sided
    
     meshName = ""
     parentPivot = 0
@@ -148,11 +160,12 @@ class MeshHeader(Struct):
     sphCenter = Vector((0.0, 0.0 ,0.0))
     sphRadius = 0.0
 
-#chunk 0
+#chunk 1
 class Mesh(Struct):
     header = MeshHeader()
     verts = []
     normals = []
-    vertInfs = []
     faces = []
+    uvCoords = []	
+    vertInfs = []
     materials = []

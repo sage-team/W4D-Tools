@@ -37,8 +37,12 @@ bl_info = {
 if "bpy" in locals():
     import imp
     if 'import_w4d' in locals():
-        imp.reload(import_w3d)
-        imp.reload(struct_w3d)
+        imp.reload(import_w4d)
+        imp.reload(struct_w4d)
+		
+    if 'export_w4d' in locals():
+        imp.reload(export_w4d)
+        imp.reload(struct_w4d)
 
 import time
 import datetime
@@ -47,7 +51,7 @@ from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy_extras.io_utils import ImportHelper, ExportHelper
 
 
-class ImportW3D(bpy.types.Operator, ImportHelper):
+class ImportW4D(bpy.types.Operator, ImportHelper):
     '''Import from W4D file format (.w4d)'''
     bl_idname = 'import_mesh.w4d'
     bl_label = 'Import W4D'
@@ -56,8 +60,6 @@ class ImportW3D(bpy.types.Operator, ImportHelper):
     filename_ext = '.w4d'
     filter_glob = StringProperty(default='*.w4d', options={'HIDDEN'})
 	
-    bpy.types.Object.sklFile = bpy.props.StringProperty(name = 'sklFile', options={'HIDDEN', 'SKIP_SAVE'})
-
     def execute(self, context):
         from . import import_w4d
         print('Importing file', self.filepath)
@@ -67,6 +69,35 @@ class ImportW3D(bpy.types.Operator, ImportHelper):
         t = time.mktime(datetime.datetime.now().timetuple()) - t
         print('Finished importing in', t, 'seconds')
         return {'FINISHED'}
+		
+class ExportW4D(bpy.types.Operator, ExportHelper):
+    '''Export to w4d file format (.w4d)'''
+    bl_idname = 'export_mesh.w4d'
+    bl_label = 'Export W4D'
+    bl_options = {'UNDO'}
+	
+    filename_ext = '.w4d'
+    filter_glob = StringProperty(default='*.w4d', options={'HIDDEN'})
+	
+    EXPORT_MODE = EnumProperty(
+            name="Export Mode",
+            items=(('M', "Model", "this will export all the meshes of the scene, without skeletons or animation"), 
+			('S', "Skeleton", "this will export the hierarchy tree without any geometry or animation data"), 
+			('A', "Animation", "this will export the animation without any geometry data or skeletons"), 
+			('HAM', "HierarchicalAnimatedModel", "this will export the meshes with the hierarchy and animation into one file")
+			),			
+			default='M',)	
+		
+    def execute(self, context):
+        from . import export_w4d
+        keywords = self.as_keywords(ignore=("filter_glob", "check_existing", "filepath"))		
+
+        print('Exporting file', self.filepath)
+        t = time.mktime(datetime.datetime.now().timetuple())
+        export_w4d.MainExport(self.filepath, context, self, **keywords) # add **keywords as param
+        t = time.mktime(datetime.datetime.now().timetuple()) - t
+        print('Finished exporting in', t, 'seconds')
+        return {'FINISHED'}	
 
 		
 def menu_func_export(self, context):
@@ -78,10 +109,12 @@ def menu_func_import(self, context):
 def register():
     bpy.utils.register_module(__name__)
     bpy.types.INFO_MT_file_import.append(menu_func_import)
+    bpy.types.INFO_MT_file_export.append(menu_func_export)
 
 def unregister():
     bpy.utils.unregister_module(__name__)
     bpy.types.INFO_MT_file_import.remove(menu_func_import)
+    bpy.types.INFO_MT_file_export.remove(menu_func_export)
 
 if __name__ == "__main__":
     register()

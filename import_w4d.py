@@ -21,13 +21,13 @@ from . import struct_w4d
 def ReadString(file):
     bytes = []
     b = file.read(1)
-    while ord(b)!=0:
+    while ord(b) != 0:
         bytes.append(b)
         b = file.read(1)
     return (b"".join(bytes)).decode("utf-8")
 
 def ReadRGBA(file):
-    return struct_w3d.RGBA(r=ord(file.read(1)), g=ord(file.read(1)), b=ord(file.read(1)), a=ord(file.read(1)))
+    return struct_w4d.RGBA(r=ord(file.read(1)), g=ord(file.read(1)), b=ord(file.read(1)), a=ord(file.read(1)))
 
 def GetChunkSize(data):
     return (data & 0x7FFFFFFF)
@@ -40,7 +40,7 @@ def ReadShort(file):
     #binary_format = "<h" short
     return (struct.unpack("<H", file.read(2))[0])
 
-def ReadUnsignedShort(file):
+def ReadSignedShort(file):
     return (struct.unpack("<h", file.read(2))[0])
 
 def ReadLongArray(file,chunkEnd):
@@ -83,7 +83,7 @@ def ReadPivots(file, chunkEnd):
     while file.tell() < chunkEnd:
         pivot = struct_w4d.HierarchyPivot()
         pivot.name = ReadString(file)
-        pivot.parentID = ReadLong(file)
+        pivot.parentID = ReadSignedShort(file)
         pivot.isBone = ReadUnsignedByte(file)
         pivot.position = ReadVector(file)
         pivot.rotation = ReadQuaternion(file)
@@ -142,7 +142,7 @@ def ReadTimeCodedAnimationChannel(file, self, chunkEnd):
     return struct_w4d.AnimationChannel(vectorLen = VectorLen, type = Type, pivot = Pivot, timeCodedKeys = TimeCodedKeys)
 
 def ReadAnimation(file, self, chunkEnd):
-    #print("\n### NEW ANIMATION: ###")
+    print("\n### NEW ANIMATION: ###")
     Header = struct_w4d.AnimationHeader()
     Channels = []
     while file.tell() < chunkEnd:
@@ -158,6 +158,19 @@ def ReadAnimation(file, self, chunkEnd):
             print("!!!unknown chunktype in Animation: %s" % chunkType)
             file.seek(chunkSize, 1)
     return struct_w4d.Animation(header = Header, channels = Channels)
+	
+#######################################################################################
+# Model
+#######################################################################################
+
+def ReadModel(file):
+    print("\n### MODEL: ###")
+    model = struct_w4d.Model()
+    model.name = ReadString(file)
+    model.hieraName = ReadString(file)
+    print(model.name)
+    print(model.hieraName)
+    return model
 
 #######################################################################################
 # Box
@@ -170,17 +183,6 @@ def ReadBox(file):
     return struct_w4d.Box(center = center, extend = extend)
 
 #######################################################################################
-# Texture
-#######################################################################################	
-
-
-
-#######################################################################################
-# Material
-#######################################################################################	
-
-
-#######################################################################################
 # Vertices
 #######################################################################################
 
@@ -190,34 +192,87 @@ def ReadMeshVerticesArray(file, chunkEnd):
         verts.append(ReadVector(file))
     return verts
 
+#######################################################################################
+# Faces
+#######################################################################################	
+
+def ReadMeshFaces(file, chunkEnd):
+    faces = []
+    while file.tell() < chunkEnd:
+        faces.append((ReadLong(file), ReadLong(file), ReadLong(file)))
+    return faces
+	
+#######################################################################################
+# UVCoords
+#######################################################################################	
+
+def ReadMeshUVCoords(file, chunkEnd):
+    uvCoords = []
+    while file.tell() < chunkEnd:
+       uvCoords.append((ReadFloat(file), ReadFloat(file)))
+    return uvCoords
+	
+#######################################################################################
+# VertexInfluences
+#######################################################################################	
+	
 def ReadMeshVertexInfluences(file, chunkEnd):
     vertInfs = []
     while file.tell()  < chunkEnd:
         vertInf = struct_w4d.MeshVertexInfluences()
         vertInf.boneIdx = ReadShort(file)
-        vertInf.bone2Idx = ReadShort(file)
         vertInf.boneInf = ReadShort(file)/100
-        vertInf.bone2Inf = ReadShort(file)/100
         vertInfs.append(vertInf)
     return vertInfs
-
+	
 #######################################################################################
-# Faces
+# Texture
 #######################################################################################	
 
-def ReadMeshFaceArray(file, chunkEnd):
-    faces = []
+def ReadTexture(file):
+    #print("Texture")
+    tex = struct_w4d.Texture()
+    tex.name = ReadString(file)
+    tex.type = ReadUnsignedByte(file)
+    tex.value = ReadFloat(file)
+	
+    # read texture animations
+    return tex
+
+#######################################################################################
+# Material
+#######################################################################################	
+
+def ReadMeshMaterial(file, chunkEnd):
+    mat = struct_w4d.MeshMaterial()
+    mat.diffuse = ReadRGBA(file)
+    mat.diffuse_intensity = ReadFloat(file)
+    mat.specular = ReadRGBA(file)
+    mat.specular_intensity = ReadFloat(file)
+    mat.emit = ReadFloat(file)
+    mat.alpha = ReadFloat(file)
+    mat.textures = []
+	
     while file.tell() < chunkEnd:
-        faces.append(ReadMeshFace(file))
-    return faces
+        Chunktype = ReadLong(file)
+        Chunksize = GetChunkSize(ReadLong(file))
+        subChunkEnd = file.tell() + Chunksize
+		
+        if Chunktype == 31:
+            mat.textures.append(ReadTexture(file))
+        else:
+            self.report({'ERROR'}, "unknown chunktype in MeshMaterial: %s" % Chunktype)
+            print("!!!unknown chunktype in MeshMaterial: %s" % Chunktype)
+            file.seek(Chunksize,1)
+    return mat
 
 #######################################################################################
 # Mesh
 #######################################################################################	
 
 def ReadMeshHeader(file):
-    result = struct_w4d.MeshHeader(attrs =  ReadLong(file), meshName = ReadFixedString(file), 
-		containerName = ReadFixedString(file), faceCount = ReadLong(file), vertCount = ReadLong(file), 
+    result = struct_w4d.MeshHeader(type =  ReadUnsignedByte(file), meshName = ReadString(file), 
+		parentPivot = ReadShort(file), faceCount = ReadLong(file), vertCount = ReadLong(file), 
 		#bounding volumes
 		minCorner = ReadVector(file),
 		maxCorner = ReadVector(file),
@@ -239,17 +294,17 @@ def ReadMesh(self, file, chunkEnd):
         Chunksize = GetChunkSize(ReadLong(file))
         subChunkEnd = file.tell() + Chunksize
 
-        if Chunktype == 1:
+        if Chunktype == 2:
             try:
                 MeshHeader = ReadMeshHeader(file)
-                #print("## Name: " + MeshHeader.meshName)
-                #print("Header")
+                print("## MeshName: " + MeshHeader.meshName)
+                #print("Header")               
             except:
                 self.report({'ERROR'}, "Mistake while reading Mesh Header (Mesh) Byte:%s" % file.tell())
                 print("Mistake while reading Mesh Header (Mesh) Byte:%s" % file.tell())
                 e = sys.exc_info()[1]
                 print(e)
-        elif Chunktype == 2:
+        elif Chunktype == 3:
             try:
                 MeshVertices = ReadMeshVerticesArray(file, subChunkEnd)
                 #print("Vertices")
@@ -258,7 +313,7 @@ def ReadMesh(self, file, chunkEnd):
                 print("Mistake while reading Vertices (Mesh) Byte:%s" % file.tell())
                 e = sys.exc_info()[1]
                 print(e)
-        elif Chunktype == 3:
+        elif Chunktype == 4:
             try:
                 MeshNormals = ReadMeshVerticesArray(file, subChunkEnd)
                 #print("Normals")
@@ -267,18 +322,9 @@ def ReadMesh(self, file, chunkEnd):
                 print("Mistake while reading Normals (Mesh) Byte:%s" % file.tell())
                 e = sys.exc_info()[1]
                 print(e)
-        elif Chunktype == 4:
-            try:
-                MeshVerticesInfs = ReadMeshVertexInfluences(file, subChunkEnd)
-                #print("VertInfs")
-            except:
-                self.report({'ERROR'}, "Mistake while reading Usertext (Mesh) Byte:%s" % file.tell())
-                print("Mistake while reading Usertext (Mesh) Byte:%s" % file.tell())
-                e = sys.exc_info()[1]
-                print(e)
         elif Chunktype == 5:
             try:
-                MeshFaces = ReadMeshFaceArray(file, subChunkEnd)
+                MeshFaces = ReadMeshFaces(file, subChunkEnd)
                 #print("Faces")
             except:
                 self.report({'ERROR'}, "Mistake while reading Mesh Faces (Mesh) Byte:%s" % file.tell())
@@ -287,8 +333,26 @@ def ReadMesh(self, file, chunkEnd):
                 print(e)
         elif Chunktype == 6:
             try:
-                MeshMaterials = ReadMeshMaterial(file, subChunkEnd)
-                #print("Faces")
+                MeshUVCoords = ReadMeshUVCoords(file, subChunkEnd)
+                #print("UVCoords")
+            except:
+                self.report({'ERROR'}, "Mistake while reading Mesh UVCoords (Mesh) Byte:%s" % file.tell())
+                print("Mistake while reading Mesh UVCoords (Mesh) Byte:%s" % file.tell())
+                e = sys.exc_info()[1]
+                print(e)
+        elif Chunktype == 7:
+            try:
+                MeshVerticesInfs = ReadMeshVertexInfluences(file, subChunkEnd)
+                #print("VertInfs")
+            except:
+                self.report({'ERROR'}, "Mistake while reading Usertext (Mesh) Byte:%s" % file.tell())
+                print("Mistake while reading Usertext (Mesh) Byte:%s" % file.tell())
+                e = sys.exc_info()[1]
+                print(e)
+        elif Chunktype == 30:
+            try:
+                MeshMaterials.append(ReadMeshMaterial(file, subChunkEnd))
+                #print("Material")
             except:
                 self.report({'ERROR'}, "Mistake while reading Mesh Material (Mesh) Byte:%s" % file.tell())
                 print("Mistake while reading Mesh Material (Mesh) Byte:%s" % file.tell())
@@ -298,19 +362,20 @@ def ReadMesh(self, file, chunkEnd):
             self.report({'ERROR'}, "unknown chunktype in Mesh: %s" % Chunktype)
             print("!!!unknown chunktype in Mesh: %s" % Chunktype)
             file.seek(Chunksize,1)
-    return struct_w3d.Mesh(header = MeshHeader, verts = MeshVertices, normals = MeshNormals, vertInfs = MeshVerticesInfs, faces = MeshFaces)
+    return struct_w4d.Mesh(header = MeshHeader, verts = MeshVertices, normals = MeshNormals, faces = MeshFaces, 
+		uvCoords = MeshUVCoords, vertInfs = MeshVerticesInfs, materials = MeshMaterials)
 
 #######################################################################################
 # loadTexture
 #######################################################################################
 
-def LoadTexture(self, givenfilepath, mesh, texName, tex_type, destBlend):
+def LoadTexture(self, givenfilepath, mesh, material, tex):
     script_directory = os.path.dirname(os.path.abspath(__file__))
     default_tex = script_directory + "\default_tex.dds"
 
     found_img = False
 
-    basename = os.path.splitext(texName)[0]
+    basename = os.path.splitext(tex.name)[0]
 
 	#test if image file has already been loaded
     for image in bpy.data.images:
@@ -319,42 +384,45 @@ def LoadTexture(self, givenfilepath, mesh, texName, tex_type, destBlend):
             found_img = True
 
     # Create texture slot in material
-    mTex = mesh.materials[0].texture_slots.add()
+    mTex = material.texture_slots.add()
     mTex.use_map_alpha = True
 
     if found_img == False:
-        tgapath = os.path.dirname(givenfilepath) + "/" + basename + ".tga"
-        ddspath = os.path.dirname(givenfilepath) + "/" + basename + ".dds"
         img = None
+        path = os.path.dirname(givenfilepath) + "/" + basename
         try:
-            img = bpy.data.images.load(tgapath)
+            img = bpy.data.images.load(path + ".tga")
         except:
             try:
-                img = bpy.data.images.load(ddspath)
+                img = bpy.data.images.load(path + ".dds")
             except:
-                self.report({'ERROR'}, "Cannot load image " + basename)
-                print("!!! Image file not found " + basename)
-                img = bpy.data.images.load(default_tex)
+                try:
+                    img = bpy.data.images.load(path + ".png")
+                except:
+                    try:
+                        img = bpy.data.images.load(path + ".jpg")
+                    except:
+                        self.report({'ERROR'}, "Cannot load image " + basename)
+                        print("!!! Image file not found " + basename)
+                        img = bpy.data.images.load(default_tex)
 
-        cTex = bpy.data.textures.new(texName, type = 'IMAGE')
+        cTex = bpy.data.textures.new(tex.name, type = 'IMAGE')
         cTex.image = img
-
-        if destBlend == 0:
-            cTex.use_alpha = True
-        else:
+		
+        if material.use_transparency:
             cTex.use_alpha = False
 
-        if tex_type == "normal":
+        if tex.type == 1:
             cTex.use_normal_map = True
             cTex.filter_size = 0.1
             cTex.use_filter_size_min = True
         mTex.texture = cTex	
     else:
-        mTex.texture = bpy.data.textures[texName]
+        mTex.texture = bpy.data.textures[tex.name]
 
     mTex.texture_coords = 'UV'
     mTex.mapping = 'FLAT'
-    if tex_type == "normal":
+    if tex.type == 1:
        mTex.normal_map_space = 'TANGENT'
        mTex.use_map_color_diffuse = False
        mTex.use_map_normal = True
@@ -367,7 +435,7 @@ def LoadTexture(self, givenfilepath, mesh, texName, tex_type, destBlend):
 
 def LoadSKL(self, sklpath):
     #print("\n### SKELETON: ###")
-    Hierarchy = struct_w3d.Hierarchy()
+    Hierarchy = struct_w4d.Hierarchy()
     file = open(sklpath, "rb")
     file.seek(0,2)
     filesize = file.tell()
@@ -379,7 +447,6 @@ def LoadSKL(self, sklpath):
         chunkEnd = file.tell() + Chunksize
         if chunkType == 256:
             Hierarchy = ReadHierarchy(file, self, chunkEnd)
-            file.seek(chunkEnd, 0)
         else:
             file.seek(Chunksize, 1)
     file.close()
@@ -389,10 +456,10 @@ def LoadSKL(self, sklpath):
 # createArmature
 #######################################################################################
 	
-def createArmature(self, Hierarchy, amtName, subObjects):
+def createArmature(self, Hierarchy, hasMeshes):
     amt = bpy.data.armatures.new(Hierarchy.header.name)
     amt.show_names = True
-    rig = bpy.data.objects.new(amtName, amt)
+    rig = bpy.data.objects.new(Hierarchy.header.name, amt)
     rig.location = Hierarchy.header.centerPos
     rig.rotation_mode = 'QUATERNION'
     rig.show_x_ray = True
@@ -402,160 +469,45 @@ def createArmature(self, Hierarchy, amtName, subObjects):
     bpy.ops.object.mode_set(mode = 'EDIT')
     bpy.context.scene.update()
 
-    non_bone_pivots = []
-    for obj in subObjects: 
-        non_bone_pivots.append(Hierarchy.pivots[obj.boneIndex])
-
 	#create the bones from the pivots
     for pivot in Hierarchy.pivots:
         #test for non_bone_pivots
-        if non_bone_pivots.count(pivot) > 0:
-                continue #do not create a bone
-        bone = amt.edit_bones.new(pivot.name)
-        if pivot.parentID > 0:
-            parent_pivot =  Hierarchy.pivots[pivot.parentID]
-            parent = amt.edit_bones[parent_pivot.name]
-            bone.parent = parent
-            size = pivot.position.x
-        bone.head = Vector((0.0, 0.0, 0.0))
-	    #has to point in y direction that the rotation is applied correctly
-        bone.tail = Vector((0.0, 0.1, 0.0))
+        if pivot.isBone or not hasMeshes:
+            bone = amt.edit_bones.new(pivot.name)
+            if pivot.parentID > 0:
+                parent_pivot =  Hierarchy.pivots[pivot.parentID]
+                parent = amt.edit_bones[parent_pivot.name]
+                bone.parent = parent
+                size = pivot.position.x
+            bone.head = Vector((0.0, 0.0, 0.0))
+	        #has to point in y direction that the rotation is applied correctly
+            bone.tail = Vector((0.0, 0.1, 0.0))
 
     #pose the bones
     bpy.ops.object.mode_set(mode = 'POSE')
-    
-    script_directory = os.path.dirname(os.path.abspath(__file__))
-    bone_file = script_directory + "\\bone.W3D"
-	
-    bone_shape = loadBoneMesh(self, bone_file)
+    custom_shape = bpy.ops.mesh.primitive_uv_sphere_add(segments = 12, size = 1.8, location = (0, 0, 0), view_align = True)
 
     for pivot in Hierarchy.pivots:
         #test for non_bone_pivots
-        if non_bone_pivots.count(pivot) > 0:
-                continue #do not create a bone
-        bone = rig.pose.bones[pivot.name]
-        bone.location = pivot.position
-        bone.rotation_mode = 'QUATERNION'
-        bone.rotation_euler = pivot.eulerAngles
-        bone.rotation_quaternion = pivot.rotation
-        #bpy.data.objects["Bone"].scale = (4, 4, 4)
-        bone.custom_shape = bpy.data.objects["skl_bone"]
+        if pivot.isBone or not hasMeshes:
+            bone = rig.pose.bones[pivot.name]
+            bone.location = pivot.position
+            bone.rotation_mode = 'QUATERNION'
+            bone.rotation_quaternion = pivot.rotation
+            #bpy.data.objects["Bone"].scale = (4, 4, 4)
+            bone.custom_shape = bpy.data.objects["Sphere"]
 
     bpy.ops.object.mode_set(mode = 'OBJECT')
-	
-	#delete the mesh afterwards
-    for ob in bpy.context.scene.objects:
-        if ob.type == 'MESH' and ob.name.startswith("skl_bone"):
-            ob.delete()
+    bpy.data.objects['Sphere'].select = True
+    bpy.ops.object.delete()
     return rig
 	
 #######################################################################################
 # createAnimation
 #######################################################################################
 
-def createAnimation(self, Animation, Hierarchy, rig, compressed):
-    bpy.data.scenes["Scene"].render.fps = Animation.header.frameRate
-    bpy.data.scenes["Scene"].frame_start = 1
-    bpy.data.scenes["Scene"].frame_end = Animation.header.numFrames
+#def createAnimation(self, Animation, Hierarchy, rig, compressed):
 
-	#create the data
-    translation_data = []
-    for pivot in range (0, len(Hierarchy.pivots)):
-        pivot = []
-        for frame in range (0, Animation.header.numFrames):
-            frame = []
-            frame.append(None)
-            frame.append(None)
-            frame.append(None)
-            pivot.append(frame)
-        translation_data.append(pivot)
-	
-    for channel in Animation.channels:
-        if (channel.pivot == 0):
-            continue   #skip roottransform
-        rest_rotation = Hierarchy.pivots[channel.pivot].rotation
-        pivot = Hierarchy.pivots[channel.pivot] 
-        try:
-            obj = rig.pose.bones[pivot.name]
-        except:
-            obj = bpy.data.objects[pivot.name]
-			
-        # ANIM_CHANNEL_X
-        if channel.type == 0:   
-            if compressed:
-                for key in channel.timeCodedKeys:
-                    translation_data[channel.pivot][key.frame][0] = key.value
-            else:
-                for frame in range(channel.firstFrame, channel.lastFrame):
-                    translation_data[channel.pivot][frame][0] = channel.data[frame - channel.firstFrame]
-        # ANIM_CHANNEL_Y
-        elif channel.type == 1:   
-            if compressed:
-                for key in channel.timeCodedKeys:
-                    translation_data[channel.pivot][key.frame][1] = key.value
-            else:
-                for frame in range(channel.firstFrame, channel.lastFrame):
-                    translation_data[channel.pivot][frame][1] = channel.data[frame - channel.firstFrame]
-        # ANIM_CHANNEL_Z
-        elif channel.type == 2:  
-            if compressed:
-                for key in channel.timeCodedKeys:
-                    translation_data[channel.pivot][key.frame][2] = key.value
-            else:
-                for frame in range(channel.firstFrame, channel.lastFrame):
-                    translation_data[channel.pivot][frame][2] = channel.data[frame - channel.firstFrame]
-		
-	    # ANIM_CHANNEL_Q
-        elif channel.type == 6:  
-            obj.rotation_mode = 'QUATERNION'
-            if compressed:
-                for key in channel.timeCodedKeys:
-                    obj.rotation_quaternion = rest_rotation * key.value
-                    obj.keyframe_insert(data_path='rotation_quaternion', frame = key.frame) 
-            else:
-                for frame in range(channel.firstFrame, channel.lastFrame):
-                    obj.rotation_quaternion = rest_rotation * channel.data[frame - channel.firstFrame]
-                    obj.keyframe_insert(data_path='rotation_quaternion', frame = frame)  
-        else:
-            self.report({'ERROR'}, "unsupported channel type: %s" %channel.type)
-            print("unsupported channel type: %s" %channel.type)
-
-    for pivot in range(1, len(Hierarchy.pivots)):
-        rest_location = Hierarchy.pivots[pivot].position
-        rest_rotation = Hierarchy.pivots[pivot].rotation 
-        lastFrameLocation = Vector((0.0, 0.0, 0.0))
-        try:
-            obj = rig.pose.bones[Hierarchy.pivots[pivot].name]
-        except:
-            obj = bpy.data.objects[Hierarchy.pivots[pivot].name]
-			
-        for frame in range (0, Animation.header.numFrames):
-            bpy.context.scene.frame_set(frame)	
-            pos = Vector((0.0, 0.0, 0.0))
-
-            if not translation_data[pivot][frame][0] == None:
-                pos[0] = translation_data[pivot][frame][0]
-                if not translation_data[pivot][frame][1] == None:
-                    pos[1] = translation_data[pivot][frame][1]
-                if not translation_data[pivot][frame][2] == None:	
-                    pos[2] = translation_data[pivot][frame][2]
-                obj.location = rest_location + (rest_rotation * pos)
-                obj.keyframe_insert(data_path='location', frame = frame) 
-                lastFrameLocation = pos
-					
-            elif not translation_data[pivot][frame][1] == None:
-                pos[1] = translation_data[pivot][frame][1]
-                if not translation_data[pivot][frame][2] == None:
-                    pos[2] = translation_data[pivot][frame][2]
-                obj.location = rest_location + (rest_rotation * pos)
-                obj.keyframe_insert(data_path='location', frame = frame) 
-                lastFrameLocation = pos
-				
-            elif not translation_data[pivot][frame][2] == None:
-                pos[2] = translation_data[pivot][frame][2]
-                obj.location = rest_location + (rest_rotation * pos)
-                obj.keyframe_insert(data_path='location', frame = frame)			
-                lastFrameLocation = pos
 
 #######################################################################################
 # create Box
@@ -591,34 +543,32 @@ def MainImport(givenfilepath, context, self):
     file.seek(0,2)
     filesize = file.tell()
     file.seek(0,0)
+    Model = None
     Meshes = []
-    Box = struct_w4d.Box()
-    Hierarchy = struct_w4d.Hierarchy()
-    Animation = struct_w4d.Animation()
-    CompressedAnimation = struct_w3d.CompressedAnimation()
-    HLod = struct_w3d.HLod()
+    Hierarchy = None
+    Animation = None
+    Box = None
     amtName = ""
+    rig = None
 
     while file.tell() < filesize:
         Chunktype = ReadLong(file)
         Chunksize =  GetChunkSize(ReadLong(file))
         chunkEnd = file.tell() + Chunksize
         if Chunktype == 0:
-            m = ReadMesh(self, file, chunkEnd)
-            Meshes.append(m)
-            file.seek(chunkEnd,0)
-
+            Model = ReadModel(file)
+			
+        elif Chunktype == 1:
+            Meshes.append(ReadMesh(self, file, chunkEnd))
+			
         elif Chunktype == 256:
             Hierarchy = ReadHierarchy(file, self, chunkEnd)
-            file.seek(chunkEnd,0)
 
         elif Chunktype == 512:
             Animation = ReadAnimation(file, self, chunkEnd)
-            file.seek(chunkEnd,0)
 
         elif Chunktype == 1024:
             Box = ReadBox(file)
-            file.seek(chunkEnd,0)
 
         else:
             self.report({'ERROR'}, "unknown chunktype in File: %s" % Chunktype)
@@ -626,38 +576,40 @@ def MainImport(givenfilepath, context, self):
             file.seek(Chunksize,1)
 
     file.close()
+	
+    # set the lamp to sun mode to make bump maps visible
+    try: 
+        bpy.data.objects["Lamp"].location = (5.0, 5.0, 5.0)
+        bpy.data.lamps["Lamp"].type = "SUN"
+    except:
+        lamp_data = bpy.data.lamps.new(name="Lamp", type='SUN')
+        lamp_object = bpy.data.objects.new(name="Lamp", object_data=lamp_data)
+        bpy.context.scene.objects.link(lamp_object)
+        lamp_object.location = (5.0, 5.0, 5.0)
 
-    if not Box.name == "":
+    if not Box == None:
         createBox(Box)
 	
-	#load skeleton (_skl.w4d) file if needed 
+	#load skeleton file if needed 
     sklpath = ""
-    if HLod.header.modelName != HLod.header.HTreeName:
-        sklpath = os.path.dirname(givenfilepath) + "\\" + HLod.header.HTreeName.lower() + ".w3d"
+    if Model != None and Model.name != Model.hieraName:
+        sklpath = os.path.dirname(givenfilepath) + "\\" + Model.hieraName.lower() + ".w4d"
         try:
             Hierarchy = LoadSKL(self, sklpath)
         except:
-            self.report({'ERROR'}, "skeleton file not found: " + HLod.header.HTreeName) 
-            print("!!! skeleton file not found: " + HLod.header.HTreeName)
+            self.report({'ERROR'}, "skeleton file not found: " + Model.hieraName) 
+            print("!!! skeleton file not found: " + Model.hieraName)
 			
-    elif (not Animation.header.name == "") and (Hierarchy.header.name == ""):
-        sklpath = os.path.dirname(givenfilepath) + "\\" + Animation.header.hieraName.lower() + ".w3d"
-        try:
-            Hierarchy = LoadSKL(self, sklpath)
-        except:
-            self.report({'ERROR'}, "skeleton file not found: " + Animation.header.hieraName) 
-            print("!!! skeleton file not found: " + Animation.header.hieraName)
-			
-    elif (not CompressedAnimation.header.name == "") and (Hierarchy.header.name == ""):
-        sklpath = os.path.dirname(givenfilepath) + "\\" + CompressedAnimation.header.hieraName.lower() + ".w3d"
-        try:
-            Hierarchy = LoadSKL(self, sklpath)
-        except:
-            self.report({'ERROR'}, "skeleton file not found: " + CompressedAnimation.header.hieraName) 
-            print("!!! skeleton file not found: " + CompressedAnimation.header.hieraName)
+    #if (not Animation.header.name == "") and (Hierarchy.header.name == ""):
+    #    sklpath = os.path.dirname(givenfilepath) + "\\" + Animation.header.hieraName.lower() + ".w3d"
+    #    try:
+    #        Hierarchy = LoadSKL(self, sklpath)
+    #    except:
+    #        self.report({'ERROR'}, "skeleton file not found: " + Animation.header.hieraName) 
+    #        print("!!! skeleton file not found: " + Animation.header.hieraName)
 
     #create skeleton if needed
-    if Hierarchy.header.name.endswith('_SKL'):
+    if not Hierarchy == None:
         amtName = Hierarchy.header.name
         found = False
         for obj in bpy.data.objects:
@@ -665,9 +617,11 @@ def MainImport(givenfilepath, context, self):
                 rig = obj
                 found = True
         if not found:
-            rig = createArmature(self, Hierarchy, amtName)
-            rig.sklFile = sklpath
-			#rig['sklFile'] = sklpath
+		    # if we only have a skeleton, we will create bones from all pivots so we dont lose data
+            hasMeshes = False
+            if len(Meshes) > 0:
+                hasMeshes = True
+            rig = createArmature(self, Hierarchy, hasMeshes)
         if len(Meshes) > 0:
             #if a mesh is loaded set the armature invisible
             rig.hide = True
@@ -677,7 +631,7 @@ def MainImport(givenfilepath, context, self):
         Faces = []
 
         for f in m.faces:
-            Faces.append(f.vertIds)
+            Faces.append(f)
 
         #create the mesh
         mesh = bpy.data.meshes.new(m.header.meshName)
@@ -692,11 +646,11 @@ def MainImport(givenfilepath, context, self):
         bm.faces.layers.tex.verify()
 
         index = 0
-        if len(m.matlPass.txStage.txCoords)>0:
+        if len(m.uvCoords) > 0:
             for f in bm.faces:
-                f.loops[0][uv_layer].uv = m.matlPass.txStage.txCoords[Faces[index][0]]
-                f.loops[1][uv_layer].uv = m.matlPass.txStage.txCoords[Faces[index][1]]
-                f.loops[2][uv_layer].uv = m.matlPass.txStage.txCoords[Faces[index][2]]
+                f.loops[0][uv_layer].uv = m.uvCoords[Faces[index][0]]
+                f.loops[1][uv_layer].uv = m.uvCoords[Faces[index][1]]
+                f.loops[2][uv_layer].uv = m.uvCoords[Faces[index][2]]
                 index+=1
 				
         bm.to_mesh(mesh)
@@ -707,31 +661,42 @@ def MainImport(givenfilepath, context, self):
         #mesh_ob.show_bounds = True
         #mesh_ob.draw_bounds_type = "BOX"
 		
+        #create the material for each mesh because the same material could be used with multiple textures
+        for mat in m.materials:
+            material = bpy.data.materials.new(m.header.meshName)
+            material.use_shadeless = True
+            if mat.alpha < 1.0:
+                material.use_transparency = True
+                material.transparency_method = "Z_TRANSPARENCY"
+            material.alpha = mat.alpha
+            material.specular_color = (mat.specular.r, mat.specular.g, mat.specular.b)
+            material.diffuse_color = (mat.diffuse.r, mat.diffuse.g, mat.diffuse.b)
+            material.specular_intensity = mat.specular_intensity
+            material.diffuse_intensity = mat.diffuse_intensity
+            mesh.materials.append(material)
+			
+            for tex in mat.textures:
+                LoadTexture(self, givenfilepath, mesh, material, tex)
+		
     for m in Meshes: #need an extra loop because the order of the meshes is random
         mesh_ob = bpy.data.objects[m.header.meshName]
         #hierarchy stuff
-        if Hierarchy.header.pivotCount > 0:
+        if not Hierarchy == None:
             # mesh header attributes
-            #        0      -> normal mesh
-			#        8192   -> normal mesh - two sided
-            #        32768  -> normal mesh - cast shadow
-            #        40960  -> normal mesh - two sided - cast shadow
-            #        131072 -> skin
-            #        139264 -> skin - two sided
-			#        143360 -> skin - two sided - hidden
-			#        163840 -> skin - cast shadow
-            #        172032 -> skin - two sided - cast shadow
-            #        393216 -> normal mesh - camera oriented (points _towards_ camera)
-            type = m.header.attrs
-            if type == 8192 or type == 40960 or type == 139264 or type == 143360 or type == 172032:
+            # 0   -> normal mesh
+	        # 1   -> normal mesh - two sided
+            # 2   -> normal mesh - camera oriented
+            # 128 -> skin
+            # 129 -> skin - two sided
+            type = m.header.type
+            if type == 1 or type == 129:
                 mesh.show_double_sided = True
 				
-            if type == 0 or type == 8192 or type == 32768 or type == 40960 or type == 393216:
+            if type == 0 or type == 1 or type == 2:
                 for pivot in Hierarchy.pivots:
                     if pivot.name == m.header.meshName:
                         mesh_ob.rotation_mode = 'QUATERNION'
                         mesh_ob.location =  pivot.position
-                        mesh_ob.rotation_euler = pivot.eulerAngles
                         mesh_ob.rotation_quaternion = pivot.rotation
 						
                         #test if the pivot has a parent pivot and parent the corresponding bone to the mesh if it has
@@ -744,7 +709,7 @@ def MainImport(givenfilepath, context, self):
                                 mesh_ob.parent_bone = parent_pivot.name
                                 mesh_ob.parent_type = 'BONE'
 
-            elif type == 131072 or type == 139264 or type == 143360 or type == 163840 or type == 172032:
+            elif type == 128 or type == 129:
                 for pivot in Hierarchy.pivots:
                     mesh_ob.vertex_groups.new(pivot.name)
 						
@@ -753,9 +718,6 @@ def MainImport(givenfilepath, context, self):
                     if weight == 0.0:
                         weight = 1.0
                     mesh_ob.vertex_groups[m.vertInfs[i].boneIdx].add([i], weight, 'REPLACE')
-					
-					#two bones are not working yet
-                    #mesh_ob.vertex_groups[m.vertInfs[i].xtraIdx].add([i], m.vertInfs[i].xtraInf, 'REPLACE')
 
                 mod = mesh_ob.modifiers.new(amtName, 'ARMATURE')
                 mod.object = rig
@@ -766,25 +728,13 @@ def MainImport(givenfilepath, context, self):
                 mod.show_in_editmode = True
                 mod.show_on_cage = True
             else:
-                print("unsupported meshtype attribute: %i" %type)
-                self.report({'ERROR'}, "unsupported meshtype attribute: %i" %type)
+                print("unsupported meshtype: %i" %type)
+                self.report({'ERROR'}, "unsupported meshtype: %i" %type)
         bpy.context.scene.objects.link(mesh_ob) # Link the object to the active scene
 
     #animation stuff
-    if not Animation.header.name == "":	
-        try:
-            createAnimation(self, Animation, Hierarchy, rig, False)
-        except:
-            #the animation could be completely without a rig and bones
-            createAnimation(self, Animation, Hierarchy, None, False)
-			
-    elif not CompressedAnimation.header.name == "":	
-        createAnimation(self, CompressedAnimation, Hierarchy, rig, True)
-        #try:
-        #    createAnimation(self, CompressedAnimation, Hierarchy, rig, True)
-        #except:
-        #    #the animation could be completely without a rig and bones
-        #    createAnimation(self, CompressedAnimation, Hierarchy, None, True)
+    if not Animation == None:	
+        createAnimation(self, Animation, Hierarchy, rig)
 	
     #to render the loaded textures				
     bpy.context.scene.game_settings.material_mode = 'GLSL'
